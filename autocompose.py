@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 import argparse
 import datetime
+import re
 import sys
 
 from collections import OrderedDict
@@ -77,12 +78,22 @@ def main():
         action="store_true",
         help="Create new volumes instead of reusing existing ones",
     )
+    parser.add_argument(
+        "-f",
+        "--filter",
+        type=str,
+        help="Filter containers by regex",
+    )
     args = parser.parse_args()
 
     container_names = args.cnames
 
     if args.all:
         container_names.extend(list_container_names())
+
+    if args.filter:
+        cfilter = re.compile(args.filter)
+        container_names = [c for c in container_names if cfilter.search(c)]
 
     struct = {}
     networks = {}
@@ -117,7 +128,7 @@ def render(struct, args, networks, volumes):
     if args.version == 1:
         pyaml.p(OrderedDict(struct))
     else:
-        ans = {"version": '"3.6"', "services": struct}
+        ans = {"version": '3.6', "services": struct}
 
         if networks is not None:
             ans["networks"] = networks
@@ -125,21 +136,7 @@ def render(struct, args, networks, volumes):
         if volumes is not None:
             ans["volumes"] = volumes
 
-        pyaml.p(OrderedDict(ans))
-
-
-def is_date_or_time(s: str):
-    for parse_func in [datetime.date.fromisoformat, datetime.datetime.fromisoformat]:
-        try:
-            parse_func(s.rstrip("Z"))
-            return True
-        except ValueError:
-            pass
-    return False
-
-
-def fix_label(label: str):
-    return f"'{label}'" if is_date_or_time(label) else label
+        pyaml.p(OrderedDict(ans), string_val_style='"')
 
 
 def generate(cname, createvolumes=False):
@@ -171,7 +168,7 @@ def generate(cname, createvolumes=False):
         "environment": cattrs.get("Config", {}).get("Env", None),
         "extra_hosts": cattrs.get("HostConfig", {}).get("ExtraHosts", None),
         "image": cattrs.get("Config", {}).get("Image", None),
-        "labels": {label: fix_label(value) for label, value in cattrs.get("Config", {}).get("Labels", {}).items()},
+        "labels": cattrs.get("Config", {}).get("Labels", {}),
         "links": cattrs.get("HostConfig", {}).get("Links"),
         #'log_driver': cattrs.get('HostConfig']['LogConfig']['Type'],
         #'log_opt': cattrs.get('HostConfig']['LogConfig']['Config'],
